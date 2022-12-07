@@ -333,3 +333,19 @@ def oracle_simulator_old(df_row,stack_spaces,buffer_spaces):
 
         #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
   return ([stack_set[1:],buffer_set[1:],stack_upos_set[1:],buffer_upos_set[1:]],action_set[1:])
+
+def OneHotEncoding(data):
+
+  unique = np.unique(data)
+  # map each value to an integer
+  mapping = {}
+  for x in range(len(unique)):
+    mapping[unique[x]] = x
+  # integer representation
+  for x in range(len(data)):
+    data[x] = mapping[data[x]]
+  # use to categoral function 
+  encoded = to_categorical(data)
+  print(encoded)
+
+  return (encoded,mapping)
