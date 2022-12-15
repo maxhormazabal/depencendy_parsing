@@ -274,3 +274,20 @@ def deprelToNumerical(df_deprel):
   for index,element in enumerate(df_deprel): 
     numericDeprel[index] =  deprel2number[element]
   return (numericDeprel,number2deprel,deprel2number)
+
+
+def projectiveArcs(df):
+  positions = []
+  positions.extend(range(len(df)))
+
+  for sentence in range(len(df)):
+    arcs = []
+    for word in range(len(df['id'][sentence])):
+      subarc = (df['head'][sentence][word],df['id'][sentence][word])
+      arcs.append(subarc)
+
+    for (i,j) in arcs:
+      for (k,l) in arcs:
+        if (i,j) != (k,l) and min(i,j) < min(k,l) < max(i,j) < max(k,l):
+          positions.remove(sentence) if sentence in positions else 1
+  return positions
