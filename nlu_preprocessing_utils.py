@@ -3,6 +3,7 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 import math
+from keras.preprocessing.text import Tokenizer
 
 def readConlluDataset(url,file_name):
   # url 'https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/master/'
@@ -39,8 +40,6 @@ def getUposList(sentences):
   for i in range(0,len(total_upos)):
     upo2number[total_upos[i]] = i+1
     number2upo[i+1] = total_upos[i]
-  print("Total of different UPOS: ",len(total_upos))
-  print(upo2number)
   return (upo2number,number2upo,len(total_upos))
 
 def conlluToDatasetForDependency(sentences,upos2number):
@@ -103,18 +102,31 @@ def bufferToVector(prev_buffer,buffer_spaces):
     buffer_vector = np.concatenate((prev_buffer,np.full(buffer_spaces-len(prev_buffer),int(0))))
   return np.array(buffer_vector,dtype='object')
 
+def reshapeData(df):
+  empty_array = np.zeros((len(df),4),dtype='object')
+
+  for (index,element) in enumerate(df):
+    for (component,vector) in enumerate(element):
+      empty_array[index][component] = vector
+  return empty_array
+
 def transformByOracle(df,stack_spaces,buffer_spaces,nupos):
-  x_data = [np.zeros(4)]
   action_data = [np.array(0)]
   deprel_data = [np.array(0)]
-
   for index in range(df.shape[0]):
     df_row = df.iloc[index,:]
     (x_set,action_set,deprel_set) = oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos)
-    x_data = np.append(x_data,x_set,axis=0)
+    if index == 0:
+      x_data = x_set
+    else:
+      x_data = np.append(x_data,x_set,axis = 0)
     action_data = np.append(action_data,action_set,axis=0)
     deprel_data = np.append(deprel_data,deprel_set,axis=0)
-  return (x_data[1:],action_data[1:],deprel_data[1:])
+
+  if (stack_spaces == buffer_spaces):
+    x_data = reshapeData(x_data)
+  
+  return (x_data,action_data[1:],deprel_data[1:])
 
 def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
   text = df_row['form']
@@ -140,10 +152,20 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
   target_spaces = 2 # action and deprel
 
   # Sets
-  x_set = [np.zeros(4)]
+  x_set = np.array([np.zeros(stack_spaces),np.zeros(buffer_spaces),np.zeros(stack_spaces),np.zeros(buffer_spaces)],dtype=object)
   action_set = [np.array(0)]
   deprel_set = [np.array(0)]
 
+  # vector = np.array(
+  #     [stackToVector(['1','1','1','1'],stack_spaces),
+  #     bufferToVector(['1','1','1','1'],buffer_spaces),
+  #     stackToVector(['1','1','1','1'],stack_spaces),
+  #     bufferToVector(['1','1','1','1'],buffer_spaces)],
+  #     dtype=object)
+
+  # x_set = np.append([x_set],[vector],axis = 0)
+
+  i = 0
   while len(buffer) > 0:
     s = stack[-1] #setting attention in the last element on stack
     b = buffer[0] #setting attention in the first element on buffer
@@ -190,7 +212,13 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
     deprel_set = np.append(deprel_set,[rel],axis = 0)
 
     x_vector = np.array([stack_vector,buffer_vector,stack_upos_vector,buffer_upos_vector],dtype='object')
-    x_set = np.append(x_set,[x_vector],axis = 0)
+
+    if (i==0):
+      x_set = np.append([x_set],[x_vector],axis = 0)
+    else:
+      x_set = np.append(x_set,[x_vector],axis = 0)
+
+    i = i + 1
     
     #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
 
@@ -233,6 +261,7 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
         #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
   return (x_set[1:],action_set[1:],deprel_set[1:])
 
+  
 def applyTokenizer(dataframe,stack_len,buffer_len,tokenizer):
   df = np.copy(dataframe)
   position = 0
@@ -291,3 +320,74 @@ def projectiveArcs(df):
         if (i,j) != (k,l) and min(i,j) < min(k,l) < max(i,j) < max(k,l):
           positions.remove(sentence) if sentence in positions else 1
   return positions
+
+def preprocessingOneStep(base_url,file_basename,stack_len,buffer_len):
+  (en_train,en_test,en_val) = readConlluDataset(base_url,file_basename)
+  en_upo2number, en_number2upo, en_nupos = getUposList(en_train)
+  number2action,action2number = getActionDict()
+
+  train_df = conlluToDatasetForDependency(en_train,en_upo2number)
+  test_df = conlluToDatasetForDependency(en_test,en_upo2number)
+  val_df = conlluToDatasetForDependency(en_val,en_upo2number)
+
+  train_df = train_df.iloc[projectiveArcs(train_df)]
+  test_df = test_df.iloc[projectiveArcs(test_df)]
+  val_df = val_df.iloc[projectiveArcs(val_df)]
+
+  text = "root"
+
+  for sentence in train_df['form']:
+    for word in sentence:
+      text = text + " " + word
+
+  tokenizer = Tokenizer(oov_token="<OOV>",filters="") 
+  tokenizer.fit_on_texts([text])
+  word_index = tokenizer.word_index
+
+  (x_train,action_train,deprel_train) = transformByOracle(train_df,stack_len,buffer_len,en_nupos)
+  (x_test,action_test,deprel_test) = transformByOracle(test_df,stack_len,buffer_len,en_nupos)
+  (x_val,action_val,deprel_val) = transformByOracle(val_df,stack_len,buffer_len,en_nupos)
+
+  x_train_token = applyTokenizer(x_train,stack_len,buffer_len,tokenizer)
+  x_test_token = applyTokenizer(x_test,stack_len,buffer_len,tokenizer)
+  x_val_token = applyTokenizer(x_val,stack_len,buffer_len,tokenizer)
+
+  deprel_train,number2deprel_train,deprel2number_train = deprelToNumerical(deprel_train)
+  deprel_test,number2deprel_test,deprel2number_test = deprelToNumerical(deprel_test)
+  deprel_val,number2deprel_val,deprel2number_val = deprelToNumerical(deprel_val)
+
+  action_encod_train = tf.keras.utils.to_categorical(action_train)
+  deprel_encod_train = tf.keras.utils.to_categorical(deprel_train)
+  action_encod_test = tf.keras.utils.to_categorical(action_test)
+  deprel_encod_test = tf.keras.utils.to_categorical(deprel_test)
+  action_encod_val = tf.keras.utils.to_categorical(action_val)
+  deprel_encod_val = tf.keras.utils.to_categorical(deprel_val)
+
+  max_len = max([deprel_encod_train.shape[1],deprel_encod_test.shape[1],deprel_encod_val.shape[1]])
+
+  deprel_encod_train = tf.keras.utils.pad_sequences(deprel_encod_train,maxlen=max_len,padding='post')
+  deprel_encod_test = tf.keras.utils.pad_sequences(deprel_encod_test,maxlen=max_len,padding='post')
+  deprel_encod_val = tf.keras.utils.pad_sequences(deprel_encod_val,maxlen=max_len,padding='post')
+
+  folder_name = str(stack_len)+"stack"+str(buffer_len)+"buffer"
+  path = "nlu_data/"+folder_name
+
+  return(path,x_train_token,action_encod_train,deprel_encod_train,x_test_token,action_encod_test,deprel_encod_test,x_val_token,action_encod_val,deprel_encod_val)
+
+def saveData(path,x_train_token,action_encod_train,deprel_encod_train,x_test_token,action_encod_test,deprel_encod_test,x_val_token,action_encod_val,deprel_encod_val):
+  # Saving train data
+  np.save(path+'/x_train.npy', x_train_token) 
+  np.save(path+'/action_train.npy', action_encod_train)
+  np.save(path+'/deprel_train.npy', deprel_encod_train)
+
+  # Saving test data
+  np.save(path+'/x_test.npy', x_test_token) 
+  np.save(path+'/action_test.npy', action_encod_test)
+  np.save(path+'/deprel_test.npy', deprel_encod_test)
+
+  # Saving val data
+  np.save(path+'/x_val.npy', x_val_token) 
+  np.save(path+'/action_val.npy', action_encod_val)
+  np.save(path+'/deprel_val.npy', deprel_encod_val)
+  
+  print("Data sucessfully saved on ./",path)
