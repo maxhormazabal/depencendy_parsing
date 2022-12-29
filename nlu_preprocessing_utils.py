@@ -7,10 +7,6 @@ from keras.preprocessing.text import Tokenizer
 import io
 
 def readConlluDataset(url,file_name):
-  # url 'https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/master/'
-  # file_name en_ewt-ud'
-  # Custom URL by type of set
-
   training_file = file_name + '-train.conllu'
   testing_file = file_name + '-test.conllu'
   validation_file = file_name + '-dev.conllu'
@@ -180,7 +176,7 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
 
     # Left arc
     if (s != 'root' and (id[findValueIndex(form,s)] not in children) and head[findValueIndex(form,s)] == id[findValueIndex(form,b)]): # if b is the father of s
-      action = 0 #'Left'
+      action = 1 #'Left'
       rel = deprel[findValueIndex(form,s)]
       stack = np.delete(stack,-1)
       children.append(id[findValueIndex(form,s)])
@@ -189,7 +185,7 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
 
     # Right arc
     elif (id[findValueIndex(form,b)] not in children and head[findValueIndex(form,b)] == id[findValueIndex(form,s)]):  #if s is the father of b
-      action = 1 #'Right'
+      action = 2 #'Right'
       rel = deprel[findValueIndex(form,b)]
       stack = np.append(stack,b)
       buffer = np.delete(buffer,0)
@@ -200,14 +196,14 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
 
     # Reduce
     elif (checkReduce(head,id,form,buffer,s) == True and id[findValueIndex(form,s)] in children):
-      action = 2 #'Reduce'
+      action = 3 #'Reduce'
       rel = 'None'
       stack = np.delete(stack,-1)
       stack_upos = np.delete(stack_upos,-1)
     
     # Shift
     else: # if there is no relationship
-      action = 3 #'Shift'
+      action = 4 #'Shift'
       rel = 'None'
       stack = np.append(stack,b)
       buffer = np.delete(buffer,0)
@@ -236,7 +232,7 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
     # Reduce and Done
 
     if (len(buffer)==0):
-      action = 2 #'Reduce'
+      action = 3 #'Reduce'
       rel = 'None'
       stack_vector = stackToVector(stack,stack_spaces)
       buffer_vector = bufferToVector(buffer,buffer_spaces)
@@ -254,7 +250,7 @@ def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
         stack = np.delete(stack,-1)
         stack_upos = np.delete(stack_upos,-1)
         if (len(stack)>1):
-          action = 2 #'Reduce'
+          action = 3 #'Reduce'
           rel = 'None'
         stack_vector = stackToVector(stack,stack_spaces)
         buffer_vector = bufferToVector(buffer,buffer_spaces)
@@ -275,140 +271,6 @@ def checkReduce(head,id,form,buffer,s):
     if head[findValueIndex(form,b)] == id[findValueIndex(form,s)]:
       pending = pending + 1
   return (pending == 0)
-
-# def oracle_simulator(df_row,stack_spaces,buffer_spaces,nupos):
-#   text = df_row['form']
-#   text_id = df_row['id']
-#   text_head = df_row['head']
-#   text_deprel = df_row['deprel']
-#   text_upos = df_row['upos']
-
-#   # re-write variables including root at the begining
-#   form = np.concatenate((['root'],text))
-#   id = np.concatenate(([int(0)],text_id))
-#   head = np.concatenate(([int(0)],text_head))
-#   deprel = np.concatenate((['root'],text_deprel))
-#   upos = np.concatenate(([int(0)],text_upos))
-
-#   # Creating the stack and buffer
-#   stack = np.array(['root'])
-#   buffer = text
-
-#   stack_upos = np.array([nupos+1])
-#   buffer_upos = text_upos
-
-#   target_spaces = 2 # action and deprel
-
-#   # Sets
-#   x_set = np.array([np.zeros(stack_spaces),np.zeros(buffer_spaces),np.zeros(stack_spaces),np.zeros(buffer_spaces)],dtype=object)
-#   action_set = [np.array(0)]
-#   deprel_set = [np.array(0)]
-
-#   # vector = np.array(
-#   #     [stackToVector(['1','1','1','1'],stack_spaces),
-#   #     bufferToVector(['1','1','1','1'],buffer_spaces),
-#   #     stackToVector(['1','1','1','1'],stack_spaces),
-#   #     bufferToVector(['1','1','1','1'],buffer_spaces)],
-#   #     dtype=object)
-
-#   # x_set = np.append([x_set],[vector],axis = 0)
-
-#   i = 0
-#   while len(buffer) > 0:
-#     s = stack[-1] #setting attention in the last element on stack
-#     b = buffer[0] #setting attention in the first element on buffer
-
-#     prev_stack = stack
-#     prev_buffer = buffer
-
-#     prev_upos_stack = stack_upos
-#     prev_upos_buffer = buffer_upos
-
-#     #Checking Right Arc
-#     # finValueIndex search the text of the current value and it returns the position
-    
-#     if (head[findValueIndex(form,b)] == id[findValueIndex(form,s)]):  #if s is the father of b
-#       action = 1
-#       rel = deprel[findValueIndex(form,b)]
-#       stack = np.append(stack,b)
-#       buffer = np.delete(buffer,0)
-
-#       stack_upos = np.append(stack_upos,upos[findValueIndex(form,b)])
-#       buffer_upos = np.delete(buffer_upos,0)
-    
-#     elif (head[findValueIndex(form,s)] == id[findValueIndex(form,b)]): # if b is the father of s
-#       action = 2
-#       rel = deprel[findValueIndex(form,s)]
-#       stack = np.delete(stack,-1)
-
-#       stack_upos = np.delete(stack_upos,-1)
-
-#     else: # if there is no relationship
-#       action = 3
-#       rel = 'None'
-#       stack = np.append(stack,b)
-#       buffer = np.delete(buffer,0)
-      
-#       stack_upos = np.append(stack_upos,upos[findValueIndex(form,b)])
-#       buffer_upos = np.delete(buffer_upos,0)
-
-#     stack_vector = stackToVector(prev_stack,stack_spaces)
-#     buffer_vector = bufferToVector(prev_buffer,buffer_spaces)
-#     stack_upos_vector = stackToVector(prev_upos_stack,stack_spaces)
-#     buffer_upos_vector = bufferToVector(prev_upos_buffer,buffer_spaces)
-#     action_set = np.append(action_set,[action],axis = 0)
-#     deprel_set = np.append(deprel_set,[rel],axis = 0)
-
-#     x_vector = np.array([stack_vector,buffer_vector,stack_upos_vector,buffer_upos_vector],dtype='object')
-
-#     if (i==0):
-#       x_set = np.append([x_set],[x_vector],axis = 0)
-#     else:
-#       x_set = np.append(x_set,[x_vector],axis = 0)
-
-#     i = i + 1
-    
-#     #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
-
-#     # Reduce and Done
-
-#     if (len(buffer)==0):
-#       action = 4
-#       rel = 'None'
-#       stack_vector = stackToVector(stack,stack_spaces)
-#       buffer_vector = bufferToVector(buffer,buffer_spaces)
-#       stack_upos_vector = stackToVector(stack_upos,stack_spaces)
-#       buffer_upos_vector = bufferToVector(buffer_upos,buffer_spaces)
-#       action_set = np.append(action_set,[action],axis = 0)
-#       deprel_set = np.append(deprel_set,[rel],axis = 0)
-
-#       x_vector = np.array([stack_vector,buffer_vector,stack_upos_vector,buffer_upos_vector],dtype='object')
-#       x_set = np.append(x_set,[x_vector],axis = 0)
-
-#       #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
-
-#       while (len(stack)>1):
-#         stack = np.delete(stack,-1)
-#         stack_upos = np.delete(stack_upos,-1)
-#         if (len(stack)>1):
-#           action = 4
-#           rel = 'None'
-#         elif(len(stack)==1):
-#           action = 5
-#           rel = 'None'
-#         stack_vector = stackToVector(stack,stack_spaces)
-#         buffer_vector = bufferToVector(buffer,buffer_spaces)
-#         stack_upos_vector = stackToVector(stack_upos,stack_spaces)
-#         buffer_upos_vector = bufferToVector(buffer_upos,buffer_spaces)
-#         action_set = np.append(action_set,[action],axis = 0)
-#         deprel_set = np.append(deprel_set,[rel],axis = 0)
-
-#         x_vector = np.array([stack_vector,buffer_vector,stack_upos_vector,buffer_upos_vector],dtype='object')
-#         x_set = np.append(x_set,[x_vector],axis = 0)
-
-#         #print(stack_vector," | ",buffer_vector," | ",action," | ",rel," | ",stack_upos_vector," | ",buffer_upos_vector)
-#   return (x_set[1:],action_set[1:],deprel_set[1:])
-
   
 def applyTokenizer(dataframe,stack_len,buffer_len,tokenizer):
   df = np.copy(dataframe)
@@ -440,8 +302,8 @@ def getDeprelDict(df_deprel):
   number2deprel = {}
 
   for index,element in enumerate(unique_deprel):
-    deprel2number[element] = index
-    number2deprel[index] = element
+    deprel2number[element] = index+1
+    number2deprel[index+1] = element
   return (number2deprel,deprel2number)
 
 def deprelToNumerical(df_deprel):
@@ -452,6 +314,12 @@ def deprelToNumerical(df_deprel):
     numericDeprel[index] =  deprel2number[element]
   return (numericDeprel,number2deprel,deprel2number)
 
+def deprelToNumericalByTrain(df_deprel,number2deprel,deprel2number):
+  numericDeprel = np.zeros(len(df_deprel))
+
+  for index,element in enumerate(df_deprel): 
+    numericDeprel[index] =  deprel2number[element]
+  return (numericDeprel,number2deprel,deprel2number)
 
 def projectiveArcs(df):
   positions = []
