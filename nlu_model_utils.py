@@ -14,27 +14,8 @@ import json
 import io
 from conllu import parse
 
-def getDataSourceMerged(set_type,stack_len,folder='nlu_data'):
-  #set_type : 'train','test','val'
-  #Getting data from files
-  x = np.load(folder+'/x_'+set_type+'.npy',allow_pickle=True)
-  action = np.load(folder+'/action_'+set_type+'.npy',allow_pickle=True)
-  deprel = np.load(folder+'/deprel_'+set_type+'.npy',allow_pickle=True)
-  x_toFloat = transformMergedDataSource(x,stack_len)
-  return x_toFloat,action,deprel
+#Get preprocessed data from files delivering 4 outputs for X data
 
-def transformMergedDataSource(array,stack_len):
-  #Return the same arrays but as float arrays in both dimensions
-  vectorsRows = array.shape[0]
-  vectorSets = array.shape[1]
-  vectorElements = stack_len
-
-  empty_data = np.zeros((vectorsRows,vectorSets,vectorElements),dtype=np.float32)
-
-  for i,set in enumerate(array):
-    for j,element in enumerate(set):
-      empty_data[i][j] = np.asarray(element).astype(np.float32)
-  return empty_data
 def getDataSource(set_type,folder='nlu_data'):
   #set_type : 'train','test','val'
   #Getting data from files
@@ -64,6 +45,32 @@ def transformDataSource(df_column):
 
   return empty_data
 
+#Get preprocessed data from files delivering 1 output for X data (merged)
+
+def getDataSourceMerged(set_type,stack_len,folder='nlu_data'):
+  #set_type : 'train','test','val'
+  #Getting data from files
+  x = np.load(folder+'/x_'+set_type+'.npy',allow_pickle=True)
+  action = np.load(folder+'/action_'+set_type+'.npy',allow_pickle=True)
+  deprel = np.load(folder+'/deprel_'+set_type+'.npy',allow_pickle=True)
+  x_toFloat = transformMergedDataSource(x,stack_len)
+  return x_toFloat,action,deprel
+
+def transformMergedDataSource(array,stack_len):
+  #Return the same arrays but as float arrays in both dimensions
+  vectorsRows = array.shape[0]
+  vectorSets = array.shape[1]
+  vectorElements = stack_len
+
+  empty_data = np.zeros((vectorsRows,vectorSets,vectorElements),dtype=np.float32)
+
+  for i,set in enumerate(array):
+    for j,element in enumerate(set):
+      empty_data[i][j] = np.asarray(element).astype(np.float32)
+  return empty_data
+
+# Transform stack and buffer to vector based on the defined length for each one
+
 def stackToVector(prev_stack,stack_spaces):
   if (len(prev_stack) == stack_spaces):
     stack_vector = prev_stack
@@ -81,6 +88,8 @@ def bufferToVector(prev_buffer,buffer_spaces):
   elif (len(prev_buffer) < buffer_spaces):
     buffer_vector = np.concatenate((prev_buffer,np.full(buffer_spaces-len(prev_buffer),int(0))))
   return np.array(buffer_vector,dtype='object')
+
+# Build model type A 
 
 def buildModelA(stack_len,buffer_len,action_shape,deprel_shape,optimizer='adam',learning_rate=0.01,embedd_output=50,loss='categorical_crossentropy'):
   input1 = tf.keras.layers.Input(shape=(stack_len,),name = 'Stack_Input')
@@ -129,50 +138,6 @@ def buildModelA(stack_len,buffer_len,action_shape,deprel_shape,optimizer='adam',
   model.compile(loss=loss,optimizer=opt,metrics=['accuracy'])
   return(model)
 
-def buildModelB(stack_len,buffer_len,action_shape,deprel_shape,optimizer='adam',learning_rate=0.01,embedd_output=50,loss='categorical_crossentropy'):
-  input1 = tf.keras.layers.Input(shape=(stack_len,),name = 'Stack_Input')
-  input2 = tf.keras.layers.Input(shape=(buffer_len,),name = 'Buffer_Input')
-
-  embedding_layer = tf.keras.layers.Embedding(10000, embedd_output,mask_zero=True)
-  input1_embedded = embedding_layer(input1)
-  input2_embedded = embedding_layer(input2)
-
-  # Concatenamos a lo largo del último eje
-  merged = tf.keras.layers.Concatenate(axis=1,name = 'Concat_Layer')([input1_embedded, input2_embedded])
-  dense1 = tf.keras.layers.Dense(50, activation='sigmoid', use_bias=True,name = 'Dense_Layer1')(merged)
-  dense2 = tf.keras.layers.Dense(15, input_dim=1, activation='relu', use_bias=True,name = 'Dense_Layer2')(dense1)
-  dense3 = tf.keras.layers.Dense(30, input_dim=1, activation='relu', use_bias=True,name = 'Dense_Layer3')(dense2)
-  output1 = tf.keras.layers.Dense(action_shape, activation='softmax', use_bias=True,name = 'Action_Output')(dense3)
-  output2 = tf.keras.layers.Dense(deprel_shape, activation='softmax', use_bias=True,name = 'Deprel_Output')(dense3)
-
-  model = tf.keras.Model(inputs=[input1,input2],outputs=[output1,output2])
-  
-  if(optimizer.lower() == 'adam'):
-    opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-  elif(optimizer.lower() == 'sgd'):
-    opt = tf.keras.optimizers.SGD(learning_rate=learning_rate)
-  elif(optimizer.lower() == 'rmsprop'):
-    opt = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'adamw'):
-    opt = tf.keras.optimizers.AdamW(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'adadelta'):
-    opt = tf.keras.optimizers.Adadelta(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'adagrad'):
-    opt = tf.keras.optimizers.Adagrad(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'adamax'):
-    opt = tf.keras.optimizers.Adamax(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'adafactor'):
-    opt = tf.keras.optimizers.Adafactor(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'nadam'):
-    opt = tf.keras.optimizers.Nadam(learning_rate=learning_rate)
-  elif (optimizer.lower() == 'ftrl'):
-    opt = tf.keras.optimizers.Ftrl(learning_rate=learning_rate)
-  else:
-    print('Optimizer not properly defined')
-
-  model.compile(loss=loss,optimizer=opt,metrics=['accuracy'])
-  return(model)
-
 def fitModel(x_train_stack,x_train_buffer,action_train, deprel_train,
               x_val_stack,x_val_buffer,action_val,deprel_val,
               x_test_stack,x_test_buffer,action_test,deprel_test,
@@ -187,6 +152,8 @@ def fitModel(x_train_stack,x_train_buffer,action_train, deprel_train,
             validation_data=([x_val_stack,x_val_buffer],[action_val,deprel_val]))
   score = model.evaluate([x_test_stack,x_test_buffer],[action_test, deprel_test], verbose=0)
   return score
+
+# Function made to iterate differents pivot parameters, run many executions and fill a dataframe with the results
 
 def saveModelAData(pivot_name,pivot,
                    x_train_stack,x_train_buffer,action_train, deprel_train,
@@ -285,6 +252,8 @@ def saveModelAData(pivot_name,pivot,
 
   return (pd.DataFrame(resultDict),models)
 
+# Get the trained tokenizer by file
+
 def getTokenizer(folder):
   path = folder + '/tokenizer.json'
   with open(path) as json_file:
@@ -297,9 +266,14 @@ def getTokenizer(folder):
 
   return (tokenizer,n_token)
 
+# Find value based on index (this function is used inside others)
+
 def findValueIndex(array,element):
   value = np.where(array == element)[0][0]
   return value
+
+# Evaluate model and check if the prediction is possible. Returns and action and deprel
+# To be used during filling the conllu output
 
 def predTestValues(stack,buffer,children,model,tokenizer):
   stack_len = len(stack)
@@ -332,6 +306,8 @@ def predTestValues(stack,buffer,children,model,tokenizer):
         break
 
   return (action,deprel)
+
+# Dictionary for transformation of numerical deprel into words
 
 def getNumber2Deprel():
 
@@ -379,167 +355,10 @@ def getNumber2Deprel():
     42: 'root',
     43: 'vocative',
     44: 'xcomp'}
-
     return number2deprel
 
-def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprelTest):
-  children = []
 
-  # re-write variables including root at the begining
-  form = np.concatenate((['root'],df_row['form']))
-  id = np.concatenate(([int(0)],df_row['id']))
-  head = np.full(len(id),999)
-  deprel = np.full(len(id),'999',dtype='object')
-
-  stack = form[0]
-  buffer = form[1:]
-
-  # First prediction
-  (action,pred_deprel) = predTestValues(stackToVector(tokenizer.texts_to_sequences(['root'])[0],stack_len),
-                bufferToVector(np.array(tokenizer.texts_to_sequences(buffer)).ravel(),buffer_len),
-                children,
-                model,
-                tokenizer)
-
-  #print(stack," | ",buffer," | ",action)
-
-  while len(buffer) > 1:
-    s = stack[-1] #setting attention in the last element on stack
-    b = buffer[0] #setting attention in the first element on buffer
-
-    # Left arc
-    if (action == 0):
-      children.append(id[findValueIndex(form,s)])
-      stack = np.delete(stack,-1)
-      head[findValueIndex(form,s)] = id[findValueIndex(form,b)]
-      deprel[findValueIndex(form,s)] = number2deprelTest[pred_deprel]
-      action_name = 'Left Arc'
-
-    # Right arc
-    elif (action == 1):  #if s is the father of b
-      children.append(id[findValueIndex(form,b)])
-      stack = np.append(stack,b)
-      buffer = np.delete(buffer,0)
-      head[findValueIndex(form,b)] = id[findValueIndex(form,s)]
-      deprel[findValueIndex(form,b)] = number2deprelTest[pred_deprel]
-      action_name = 'Right Arc'
-
-    # Reduce
-    elif (action == 2):
-      stack = np.delete(stack,-1)
-      action_name = 'Reduce'
-    
-    # Shift
-    elif (action == 3):
-      stack = np.append(stack,b)
-      buffer = np.delete(buffer,0)
-      action_name = 'Shift'
-
-    #print(stack,stack.shape," | ",buffer,buffer.shape," | ",action_name)
-    
-    (action,pred_deprel) = predTestValues(stackToVector(tokenizer.texts_to_sequences(stack)[0],stack_len),
-                  bufferToVector(np.array(tokenizer.texts_to_sequences(buffer)).ravel(),buffer_len),
-                  children,
-                  model,
-                  tokenizer)
-    
-  head = checkHead(head[1:])
-  deprel = checkDeprel(deprel[1:])
-  return (head,deprel)
-
-def checkHead(vector):
-  k = 0
-  for i,element in enumerate(vector):
-    if element == 0:
-      k = k + 1
-
-  # Si existe más de uno 
-  if k>1:
-    for i,element in enumerate(vector):
-      if element == 0 and k>1:
-        vector[i] = 999
-        k = k - 1
-  for i,element in enumerate(vector):
-    if element == 999 and k == 0:
-      vector[i] = 0
-      break
-  for i,element in enumerate(vector):
-    if element == 999:
-      for l in range(1,len(vector)):
-        if l not in vector:
-          vector[i] = l
-          break
-  return vector
-
-
-def checkDeprel(vector):
-  k = 0
-  for i,element in enumerate(vector):
-    if element == 'root':
-      k = k + 1
-  if i>1:
-    for i,element in enumerate(vector):
-      if element == 'root':
-        vector[i] = 'other'
-  for i,element in enumerate(vector):
-    if element == '999' and k == 0:
-      vector[i] = 'root'
-      break
-  for i,element in enumerate(vector):
-    if element == '999':
-      vector[i] = 'other'
-      
-  return vector
-
-def generateConlluForPrediction(stack_len,buffer_len,path,model,tokenizer,en_upo2number):
-  en_test = parse(open(path+'/original_test_line.conllu',mode="r",encoding="utf-8").read())
-  test_df = conlluToDatasetForDependency(en_test,en_upo2number)
-  number2deprelTest = getNumber2Deprel()
-
-  # Iterate each row of df_test, and take the head en deprel.
-  for row in range(len(test_df)):
-    (head,deprel) = testingPredictions(stack_len,buffer_len,
-                                       test_df.iloc[row,:],
-                                       tokenizer,
-                                       model,number2deprelTest)
-    for word in range(len(en_test[row])):
-      if len(en_test[row]) > len(head):
-        head = np.concatenate((head,np.full(len(en_test[row])-len(head),int(0))))
-      if len(en_test[row]) > len(deprel):
-        deprel = np.concatenate((deprel,np.full(len(en_test[row])-len(deprel),int(0))))
-      en_test[row][word]['head'] = head[word]
-      en_test[row][word]['deprel'] = deprel[word]
-  return en_test
-
-def generatePredictionFile(en_test,path):
-  with io.open(path+"/predicted_test.conllu", mode='a', encoding='utf-8') as f:
-    for token_list in en_test:
-      serialized = token_list.serialize()
-      lineas = serialized.split('\n\n')
-      lineas_sin_vacias = []
-
-      for linea in lineas:
-        if linea.strip():
-          lineas_sin_vacias.append(linea)
-      serialized_sin_saltos_linea = '\n'.join(lineas_sin_vacias)
-      serialized_sin_saltos_linea += '\n\n'
-      f.write(serialized_sin_saltos_linea)
-
-  with open(path+'/predicted_test.conllu', 'r') as f:
-    contenido = f.read()
-
-  lineas = contenido.split('\n\n')
-  lineas_sin_vacias = []
-
-  for linea in lineas:
-    if linea.strip():
-      lineas_sin_vacias.append(linea)
-
-  contenido_con_un_salto_linea = '\n\n'.join(lineas_sin_vacias)
-
-  with open(path+'/predicted_test_line.conllu', 'w') as f:
-    f.write(contenido_con_un_salto_linea+'\n\n')
-  print('Predicted file generated in ',path,'/predicted_test_line.conllu')
+# Iterate models by using a 4input model
 
 def saveModelADataUpos(pivot_name,pivot,
                    x_train_stack,x_train_buffer,x_train_stack_upos,x_train_buffer_upos,action_train, deprel_train,
@@ -584,14 +403,6 @@ def saveModelADataUpos(pivot_name,pivot,
       (stopper,patience) = value
     elif (pivot_name == 'optimizer'):
       (optimizer,learning_rate) = value
-    elif (pivot_name == 'embedding'):
-      embedd_output = value
-    elif (pivot_name == 'stack_buffer_sizes'):
-      stack_len,buffer_len = value
-      path = "nlu_data/"+str(stack_len)+"stack"+str(buffer_len)+"buffer"
-      (x_train_stack,x_train_buffer,x_train_stack_upos,x_train_buffer_upos,action_train,deprel_train) = getDataSource('train',folder=path)
-      (x_test_stack,x_test_buffer,x_test_stack_upos,x_test_buffer_upos,action_test,deprel_test) = getDataSource('test',folder=path)
-      (x_val_stack,x_val_buffer,x_val_stack_upos,x_val_buffer_upos,action_val,deprel_val) = getDataSource('val',folder=path)
 
     arquitecture = 'A'
     start_time = time.time()
@@ -660,6 +471,7 @@ def saveModelADataUpos(pivot_name,pivot,
   return (pd.DataFrame(resultDict),models,bestActionModel,bestDeprelModel)
   #return (resultDict,models)
 
+# Final ANN arquitecture
 
 def buildModelFinal(stack_len,buffer_len,action_shape,deprel_shape,num_tokens,optimizer='adam',learning_rate=0.01,embedd_output=(30,50),loss='categorical_crossentropy'):
   embedding_stack_dim = embedd_output[0]
@@ -731,6 +543,8 @@ def buildModelFinal(stack_len,buffer_len,action_shape,deprel_shape,num_tokens,op
   model.compile(loss=loss,optimizer=opt,metrics=['accuracy'])
   return(model)
 
+# Fit model with 4 inputs
+
 def fitModelFinal(x_train_stack,x_train_buffer,x_train_stack_upos,x_train_buffer_upos,action_train, deprel_train,
               x_test_stack,x_test_buffer,x_test_stack_upos,x_test_buffer_upos,action_test, deprel_test,
               x_val_stack,x_val_buffer,x_val_stack_upos,x_val_buffer_upos,action_val, deprel_val,
@@ -745,6 +559,8 @@ def fitModelFinal(x_train_stack,x_train_buffer,x_train_stack_upos,x_train_buffer
             validation_data=([x_val_stack,x_val_buffer,x_val_stack_upos,x_val_buffer_upos],[action_val,deprel_val]))
   score = model.evaluate([x_test_stack,x_test_buffer,x_test_stack_upos,x_test_buffer_upos],[action_test, deprel_test], verbose=0)
   return score
+
+
 
 def predTestValuesUpos(stack,buffer,stack_upos,buffer_upos,stack_len,buffer_len,children,model,tokenizer):
   
@@ -762,19 +578,21 @@ def predTestValuesUpos(stack,buffer,stack_upos,buffer_upos,stack_len,buffer_len,
 
   for position in range(4):
     action = pred_action.argsort()[-(position+1)]
-    if action == 3: #Shift
+    if action == 4: #Shift
       break
-    if action == 0: #Left
+    if action == 1: #Left
       if (stack[-1] != tokenizer.texts_to_sequences(['root'])[0][0] and id_stack[-1] not in children):
         break
-    if action == 1: #Right
+    if action == 2: #Right
       if (id_buffer[0] not in children):
         break
-    if action == 2: #Reduce
+    if action == 3: #Reduce
       if (id_stack[-1] in children):
         break
 
   return (action,deprel)
+
+# Get the oracle by using the model to predicts heads and deprel
 
 def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprelTest,nupos):
   children = []
@@ -807,7 +625,7 @@ def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprel
     b = buffer[0] #setting attention in the first element on buffer
 
     # Left arc
-    if (action == 0):
+    if (action == 1):
       children.append(id[findValueIndex(form,s)])
       stack = np.delete(stack,-1)
       stack_upos = np.delete(stack_upos,-1)
@@ -816,7 +634,7 @@ def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprel
       action_name = 'Left Arc'
 
     # Right arc
-    elif (action == 1):  #if s is the father of b
+    elif (action == 2):  #if s is the father of b
       children.append(id[findValueIndex(form,b)])
       stack = np.append(stack,b)
       buffer = np.delete(buffer,0)
@@ -827,13 +645,13 @@ def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprel
       action_name = 'Right Arc'
 
     # Reduce
-    elif (action == 2):
+    elif (action == 3):
       stack = np.delete(stack,-1)
       stack_upos = np.delete(stack_upos,-1)
       action_name = 'Reduce'
     
     # Shift
-    elif (action == 3):
+    elif (action == 4):
       stack = np.append(stack,b)
       buffer = np.delete(buffer,0)
       stack_upos = np.append(stack_upos,upos[findValueIndex(form,b)])
@@ -843,6 +661,8 @@ def testingPredictions(stack_len,buffer_len,df_row,tokenizer,model,number2deprel
   head = checkHead(head[1:])
   deprel = checkDeprel(deprel[1:])
   return (head,deprel)
+
+# Check if the configuration of head have just one head = 0 and modify it in case of errors
 
 def checkHead(vector):
   # Contamos cuantos elementos son iguales a 0
@@ -871,7 +691,19 @@ def checkHead(vector):
   for i in range(len(vector)):
     if vector[i] == 999:
       vector[i] = vector.index(0) + 1
+  
+  head = check_cycle(vector)
   return vector
+
+def check_cycle(head):
+  id = list(range(1, len(head)+1))
+  for index,h in enumerate(head):
+    for i in id:
+      if (h,i)==(i,h):
+        head[index] = head.index(0) + 1
+  return head
+
+# Check if the configuration of head have just one 'root' and modify it in case of errors
 
 def checkDeprel(vector):
   vector = list(vector)
@@ -909,6 +741,8 @@ def checkDeprel(vector):
       vector[i] = 'other'
   return vector
 
+# Use the predictions of oracle to fill a conllu file and compare it with the original one
+
 def generateConlluForPrediction(stack_len,buffer_len,path,model,tokenizer,en_upo2number):
   en_test = parse(open(path+'/original_test_line.conllu',mode="r",encoding="utf-8").read())
   test_df = conlluToDatasetForDependency(en_test,en_upo2number)
@@ -916,6 +750,7 @@ def generateConlluForPrediction(stack_len,buffer_len,path,model,tokenizer,en_upo
 
   # Iterate each row of df_test, and take the head en deprel.
   for row in range(len(test_df)):
+    print(6700-row)
     (head,deprel) = testingPredictions(stack_len,buffer_len,
                                        test_df.iloc[row,:],
                                        tokenizer,
